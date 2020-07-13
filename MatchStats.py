@@ -114,6 +114,22 @@ def get_match_stats(row, driver):
     return match_results
 
 
+def get_team_roster(row, driver):
+    driver.get(base_url + row['Team URL'])
+    
+    try:
+        game_by_game = driver.find_element_by_link_text('Roster')
+        game_by_game.click()
+    except:
+        print('Unable to find Roster for %s on %s' % (row['Team'], base_url + row['Team URL']))
+        return pd.DataFrame([])
+    
+    roster = pd.read_html(driver.page_source)[0]
+    roster.columns = roster.columns.droplevel(0)
+    roster.insert(0, 'Team', row['Team'])
+    return roster
+
+
 dash = get_all_teams(team_url)
 dash.to_csv('AllTeams2020.csv', index=False)
 
@@ -121,11 +137,16 @@ driver = webdriver.Chrome()
 
 results = []
 for _,row in dash.iterrows():
-    tmp = get_match_stats(row, driver)
+    tmp = get_team_roster(row, driver)
     if not tmp.empty:
         results.append(tmp)
+
+#for _,row in dash.iterrows():
+#    tmp = get_match_stats(row, driver)
+#    if not tmp.empty:
+#        results.append(tmp)
         
 driver.close()
         
 pd.concat(results).info()
-pd.concat(results).to_csv('MatchStats6Year.csv', index=False)
+pd.concat(results).to_csv('Roster2019.csv', index=False)
