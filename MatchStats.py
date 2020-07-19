@@ -8,6 +8,7 @@ This is a temporary script file.
 
 import pandas as pd
 from selenium import webdriver
+from selenium.webdriver.support.ui import Select
 from bs4 import BeautifulSoup
 import requests
 
@@ -116,18 +117,29 @@ def get_match_stats(row, driver):
 
 def get_team_roster(row, driver):
     driver.get(base_url + row['Team URL'])
-    
-    try:
-        game_by_game = driver.find_element_by_link_text('Roster')
-        game_by_game.click()
-    except:
-        print('Unable to find Roster for %s on %s' % (row['Team'], base_url + row['Team URL']))
-        return pd.DataFrame([])
-    
-    roster = pd.read_html(driver.page_source)[0]
-    roster.columns = roster.columns.droplevel(0)
-    roster.insert(0, 'Team', row['Team'])
-    return roster
+
+    all_seasons = []
+    for season in SEASONS:
+        if season != SEASONS[0]:
+            select = Select(driver.find_element_by_id('year_list'))
+            select.select_by_visible_text(season)
+
+        try:
+            game_by_game = driver.find_element_by_link_text('Roster')
+            game_by_game.click()
+
+            roster = pd.read_html(driver.page_source)[0]
+            roster.columns = roster.columns.droplevel(0)
+            roster.insert(0, 'Team', row['Team'])
+            roster.insert(1, 'Season', season)
+        except:
+            print('Unable to find Roster for %s on %s' % (row['Team'], base_url + row['Team URL']))
+            roster = pd.DataFrame()
+        
+        all_seasons.append(roster)
+        
+    all_rosters = pd.concat(all_seasons).reset_index(drop=True)
+    return all_rosters
 
 
 dash = get_all_teams(team_url)
@@ -147,6 +159,10 @@ for _,row in dash.iterrows():
 #        results.append(tmp)
         
 driver.close()
-        
-pd.concat(results).info()
-pd.concat(results).to_csv('Roster2019.csv', index=False)
+
+df = pd.concat(results).reset_index(drop=True)        
+df[['Last', 'First']] = df['Player'].str.split(',', expand=True)
+df['Year'] = df['Season'].str.split('-').str.get(0)
+
+df.info()
+df.to_csv('Roster.csv', index=False)
