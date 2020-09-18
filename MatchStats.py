@@ -11,11 +11,14 @@ from selenium import webdriver
 from selenium.webdriver.support.ui import Select
 from bs4 import BeautifulSoup
 import requests
+import os.path
 
 
 base_url = 'http://stats.ncaa.org'
-team_url = 'https://stats.ncaa.org/team/inst_team_list?academic_year=2020&conf_id=-1&division=1&sport_code=WVB'
+#team_url = 'https://stats.ncaa.org/team/inst_team_list?academic_year=2020&conf_id=-1&division=1&sport_code=WVB'
+team_url = 'https://stats.ncaa.org/team/inst_team_list?academic_year=2020&conf_id=-1&division=2&sport_code=WVB'
 SEASONS = ['2019-20', '2018-19', '2017-18', '2016-17', '2015-16', '2014-15']
+SEASONS = ['2019-20', '2018-19', '2017-18', '2016-17', '2015-16']
 
 
 def get_all_teams(tm_url):
@@ -51,12 +54,23 @@ def get_match_stats(row, driver):
     all_seasons = []
     for season in SEASONS:
         if season != SEASONS[0]:
-            year_link = driver.find_element_by_link_text(season)
-            year_link.click()
+            try:
+                year_link = driver.find_element_by_link_text(season)
+                year_link.click()
+            except:
+                continue
 
         dfs = pd.read_html(driver.page_source)
+        
+        '''
+            The last row may contain comments in rare cases
+            Check of this and ignore this row
+        '''
+        last_row = len(dfs[3].index)
+        if dfs[3].iloc[last_row-1,0][0] == '*':
+            last_row -= 1
 
-        match = dfs[3].iloc[2:,:-1].reset_index(drop=True)
+        match = dfs[3].iloc[2:last_row,:-1].reset_index(drop=True)
         match.columns = dfs[3].iloc[1,:-1].values
         match.rename(index=str, columns={'Pct' : 'Hit Pct'}, inplace=True)
 
@@ -71,7 +85,7 @@ def get_match_stats(row, driver):
         
     match_results = pd.concat(all_seasons, sort=False)
     
-    match_results['Team'] = row['Team']
+    match_results.insert(0, 'Team', row['Team'])
     match_results.loc[:,'S':'BHE'] = match_results.loc[:,'S':'BHE'].fillna(0, axis=1)
     match_results.loc[:,'S':'BHE'] = match_results.loc[:,'S':'BHE'].astype('str').apply(lambda x: x.str.rstrip('\*\/'))
 
@@ -101,7 +115,7 @@ def get_match_stats(row, driver):
     match_results.drop('Result', axis=1, inplace=True)
 
     # create the home/away columm
-    match_results['Location'] = 'Home'
+    match_results.insert(1, 'Location', 'Home')
     match_results.loc[match_results['Opponent'].str.startswith('@'), 'Location'] = 'Away'
     match_results['Opponent'] = match_results['Opponent'].str.lstrip('@ ',)
 
@@ -142,27 +156,36 @@ def get_team_roster(row, driver):
     return all_rosters
 
 
-dash = get_all_teams(team_url)
-dash.to_csv('AllTeams2020.csv', index=False)
+
+if os.path.exists('D2Teams2020.csv'):
+    dash = pd.read_csv('D2Teams2020.csv')
+else:
+    dash = get_all_teams(team_url)
+    dash.to_csv('D2Teams2020.csv', index=False)
 
 driver = webdriver.Chrome()
-
 results = []
+
+'''
+Roster
+'''
+# for _,row in dash.iterrows():
+#     tmp = get_team_roster(row, driver)
+#     if not tmp.empty:
+#         results.append(tmp)
+# df = pd.concat(results).reset_index(drop=True)        
+# df[['Last', 'First']] = df['Player'].str.split(',', expand=True)
+# df['Year'] = df['Season'].str.split('-').str.get(0)
+
+
 for _,row in dash.iterrows():
-    tmp = get_team_roster(row, driver)
+# for _,row in dash.iloc[137:138,:].iterrows():
+    tmp = get_match_stats(row, driver)
     if not tmp.empty:
         results.append(tmp)
-
-#for _,row in dash.iterrows():
-#    tmp = get_match_stats(row, driver)
-#    if not tmp.empty:
-#        results.append(tmp)
         
 driver.close()
 
 df = pd.concat(results).reset_index(drop=True)        
-df[['Last', 'First']] = df['Player'].str.split(',', expand=True)
-df['Year'] = df['Season'].str.split('-').str.get(0)
-
 df.info()
-df.to_csv('Roster.csv', index=False)
+df.to_csv('D2MatchResults.csv', index=False)
